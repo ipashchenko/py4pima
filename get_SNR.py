@@ -156,6 +156,8 @@ def check_fits_file(exp_name, band, exp_dir, logs_dir):
 
 if __name__ == '__main__':
 
+    if len(sys.argv) not in [3,4]:
+        sys.exit("Usage: " + "python " + sys.argv[0] + " exp_name" + " band" + " [ref-station]")
 
 # band name - frequency mapping
 # TODO: add regexp for frequencies
