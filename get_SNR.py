@@ -108,20 +108,11 @@ def replace(file, pattern, subst):
 
 
 def check_fits_file(exp_name, band, exp_dir, logs_dir):
-    """Checks that FITS-file(s) listed in *.cnt file in `exp_dir` do exists.
-    Builds list of FITS-files on the basis of logs and checks that all of
-    them listed in *.cnt file. If not all - adds them there. If file(s), specified
-    in *.cnt file is absened and no files with specified band are found in
-    logs_dir => throws NoUVFilesException).
     """
-
-# Find FITS-files listed in *.cnt-file
-   # fits_files_cnt = set()
-   # with open(glob.glob(exp_dir + "/*.cnt")[0]) as cntf:
-   #     for line in cntf.readlines():
-   #         if 'UV_FITS:' in line:
-   #             fits_file = line.split()[-1]
-   #             fits_files_cnt.add(fits_file)
+    Builds list of FITS-files on the basis of logs and adds them to *.cnt-file.
+    If no files with specified band are found in logs_dir => throws
+    NoUVFilesException.
+    """
 
 # Find FITS-files with the desired band from logs
     logs_directory = logs_dir + exp_name 
