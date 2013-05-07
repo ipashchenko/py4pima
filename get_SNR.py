@@ -161,6 +161,7 @@ if __name__ == '__main__':
 
 # band name - frequency mapping
 # TODO: add regexp for frequencies
+    login = os.getlogin()
     freq_dict = {"l": "166", "c": "48", "k": "22"}
     logs_dir = '/home/difxmgr/exper/'
     #exp_name = 'raes03jv'
@@ -174,7 +175,7 @@ if __name__ == '__main__':
 	refant = "EFLSBERG"
 
 # Creating experiment directory
-    os.chdir('/data/ilya/VLBI/pima/')
+    os.chdir('/data/' + login + '/VLBI/pima/')
     os.mkdir(exp_name)
     os.chdir(exp_name)
     exp_dir = os.getcwd()
