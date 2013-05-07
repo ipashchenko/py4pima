@@ -29,17 +29,62 @@ def replace(file, pattern, subst):
     file_handle.close()
 
 
-def grab_SNR(fname):
-    """Return list of values after `SNR=` in the end of each string.
+def find_kth_word_in_line(line, k, words, start=None):
+    """
+    Return  k-th word in line if line does contain specified words, begin with
+    specified string or contain specified regular expressions.
+
+    #TODO: implement negatiation
+
+    Inputs:
+    	line [str] - line to search,
+	k [int] - position of word in line,
+	words - iterable of words (strings),
+	start [string] - string that line must start from.
+    Outputs:
+    	None - if no such lines are found in file,
+	[str] - k-th word in line, containing words.
+    """
+
+    contains = [word in line for word in words]
+    if False in contains:
+	result = None
+    elif start:
+	if not line.startswith(start):
+	    result = None
+	else:
+            result = line.split()[k]
+    else:
+        result = line.split()[k]
+
+    return result
+	
+
+def find_kths_words_in_file(fname, klist, words, start=None):
+    """
+    Return list of k-th words in each line of file if string
+    contains specified words.
+    Inputs:
+    	fname [str] - file name,
+	klist [list] - list of positions of words in line
+	words - iterable of words (strings),
+	start [string] - string that line must start from.
+    Outputs:
+    	None - if no such lines are found in file,
+	[list] - list of lists of strings.
     """
 
     results = list()
 
     with open(fname) as file:
         for line in file:
-            if "SNR=" in line:
-                result = line.split()[-1]
-                results.append(result)
+	    line_results = list()
+	    for k in klist:
+		result = find_kth_word_in_line(line, k, words, start=start) 
+		if result:
+		    line_results.append(result)
+	    if line_results:
+	        results.append(line_results)
 
     return results
 
@@ -62,7 +107,7 @@ def replace(file, pattern, subst):
     file_handle.close()
 
 
-def check_fits_file(exp_dir, logs_dir):
+def check_fits_file(exp_name, band, exp_dir, logs_dir):
     """Checks that FITS-file(s) listed in *.cnt file in `exp_dir` do exists.
     Builds list of FITS-files on the basis of logs and checks that all of
     them listed in *.cnt file. If not all - adds them there. If file(s), specified
@@ -79,13 +124,13 @@ def check_fits_file(exp_dir, logs_dir):
    #             fits_files_cnt.add(fits_file)
 
 # Find FITS-files with the desired band from logs
-    logs_directory = logs_dir + 'raes03jv'
+    logs_directory = logs_dir + exp_name 
     logs_files = glob.glob(logs_directory + "/*.log")
     fits_files_logs = set()
     for log_file in logs_files:
         with open(log_file) as lf:
             for line in lf.readlines():
-                if "Freq=" + str("166") in line:
+                if "Freq=" + freq_dict[band] in line:
                     fits_file = log_file.rstrip(".log")
                     fits_file += ".FITS"
                     fits_files_logs.add(fits_file)
@@ -95,7 +140,7 @@ def check_fits_file(exp_dir, logs_dir):
 
     current_line_is_FITS = False
     for line in fileinput.input(glob.glob(exp_dir + "/*.cnt")[0], inplace=1):
-        print line,
+        print(line.strip())
         if line.startswith("#UV_FITS:"):
             current_line_is_FITS = True
         if not line.startswith("#UV_FITS:") and current_line_is_FITS:
@@ -103,7 +148,7 @@ def check_fits_file(exp_dir, logs_dir):
             if fits_files_logs:
                 for fits_file in fits_files_logs:
                     line = "UV_FITS:            " + fits_file
-                    print line, "\n"
+                    print(line.strip())
 
             else:
                 raise NoUVFilesException("No FITS-files mentioned in logs of " + str(exp_name))
@@ -114,14 +159,17 @@ if __name__ == '__main__':
 
 # band name - frequency mapping
 # TODO: add regexp for frequencies
-    freq_dict = {"l": "166", "c": "4828", "k": "22228"}
+    freq_dict = {"l": "166", "c": "48", "k": "22"}
     logs_dir = '/home/difxmgr/exper/'
     #exp_name = 'raes03jv'
     exp_name = sys.argv[1]
     #band = 'l'
     band = sys.argv[2]
     #refant = 'EFLSBERG'
-    refant = sys.argv[3]
+    try:
+        refant = sys.argv[3]
+    except IndexError:
+	refant = "EFLSBERG"
 
 # Creating experiment directory
     os.chdir('/data/ilya/VLBI/pima/')
@@ -149,50 +197,51 @@ if __name__ == '__main__':
 
 # Inserting FITS-files with the desired band found in logs to *.cnt-file and
 # commenting out previous entries
-    check_fits_file(exp_dir, logs_dir)
+    check_fits_file(exp_name, band, exp_dir, logs_dir)
 
 # Finding out number of scans:
-    os.chdir("/data/ilya/pima_scr/")
-    text = open(exp_name + "_" + band + ".obs")
-    number_of_scans = len(re.findall("#SCA", text.read()))
+    #os.chdir("/data/ilya/pima_scr/")
+    #text = open(exp_name + "_" + band + ".obs")
+    #number_of_scans = len(re.findall("#SCA", text.read()))
+    #os.chdir(exp_dir)
 
 # PROCEEDING WITH PIMA
 
 # Loading fits-files
+    print("loading fits-files... ")
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band load'")
-    print("waiting 10 secs for loading fits-files. Hope it is enough:)")
-    time.sleep(10)
 
+    print("loading ephemerids... ")
     os.system("tcsh -c get_orbitfile.sh '$exp_name'")
+
 # Coarse fringe-fitting
+    print("coarse fring-fitting... ")
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band coarse'")
-    print("waiting 10 secs for coarse fring-fitting. Hope it is enough:)")
-    time.sleep(10)
 
 # Bandpass calibration
+    print("bandpass calibration... ")
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band bpass'")
-    print("waiting 10 secs for bandpass calibration. Hope it is enough:)")
-    time.sleep(10)
 
 # Fine fringe-fitting and parsing for SNR values
+    print("fine fringe-fitting... ")
+    fname = exp_name + "_" + band + "_fine.log"
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: RR'")
-    time.sleep(10)
-    RR = grab_SNR(exp_name + "_" + band + "_fine.log")
+
+    RR = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
 
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: LL'")
-    time.sleep(10)
-    LL = grab_SNR(exp_name + "_" + band + "_fine.log")
+    LL = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
 
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: RL'")
-    time.sleep(10)
-    RL = grab_SNR(exp_name + "_" + band + "_fine.log")
+    RL = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
 
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: LR'")
-    time.sleep(10)
-    LR = grab_SNR(exp_name + "_" + band + "_fine.log")
+    LR = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
 
-    print("RR, LL, RL, LR :")
-    print(RR)
-    print(LL)
-    print(RL)
-    print(LR)
+    print("====================================")
+    print("Results (RR, LL, RL, LR) :")
+    for i in range(len(RR)):
+        print("#" + str(i + 1) + ":")
+	print("baseline " + str(RR[i][1]))
+	print(RR[i][0], LL[i][0], RL[i][0], LR[i][0])
+	print("====================================")
