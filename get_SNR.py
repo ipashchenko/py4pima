@@ -167,7 +167,11 @@ if __name__ == '__main__':
 
 # Creating experiment directory
     os.chdir('/data/' + login + '/VLBI/pima/')
-    os.mkdir(exp_name)
+    try:
+        os.mkdir(exp_name)
+    except OSError:
+    	sys.exit("Directory /data/" + login + "/VLBI/pima/" + str(exp_name) + " already exists!")
+
     os.chdir(exp_name)
     exp_dir = os.getcwd()
 
