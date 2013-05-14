@@ -5,12 +5,14 @@ import sys
 import time
 import glob
 import fileinput
+import paramiko
+import argparse
 
 
 class NoUVFilesException(Exception):
     pass
 
-
+    
 def replace(file, pattern, subst):
     """Replace `pattern` on `subst` in `file`.
     """
@@ -89,22 +91,23 @@ def find_kths_words_in_file(fname, klist, words, start=None):
     return results
 
 
-def replace(file, pattern, subst):
-    """Replace `pattern` on `subst` in `file`.
-    """
-# Read contents from file as a single string
-    file_handle = open(file, 'r')
-    file_string = file_handle.read()
-    file_handle.close()
+def get_files(names, host, port, username, password, remote_path):
+    """Get files with name containing ``names`` from remote host to local
+    directory."""
 
-# Use RE package to allow for replacement (also allowing for (multiline) REGEX)
-    file_string = (re.sub(pattern, subst, file_string))
+    transport = paramiko.Transport((host, port))
+    transport.connect(username=username, password=password)
+    sftp = paramiko.SFTPClient.from_transport(transport)
 
-# Write contents to file.
-# Using mode 'w' truncates the file.
-    file_handle = open(file, 'w')
-    file_handle.write(file_string)
-    file_handle.close()
+    sftp.chdir(remote_path)
+    files = sftp.listdir()
+    for fname in files:
+        file_to_get = find_kth_word_in_line(fname, 0, names)
+	if file_to_get:
+	    print("Downloading " + file_to_get + " from " + host + ":" +
+	    remote_path + "/")
+            sftp.get(file_to_get, file_to_get)
+	    print("Done Downloading")
 
 
 def check_fits_file(exp_name, band, exp_dir, logs_dir):
@@ -147,11 +150,37 @@ def check_fits_file(exp_name, band, exp_dir, logs_dir):
 
 if __name__ == '__main__':
 
-    if len(sys.argv) not in [3,4]:
-        sys.exit("Usage: " + "python " + sys.argv[0] + " exp_name" + " band" + " [ref-station]")
 
-# band name - frequency mapping
-# TODO: add regexp for frequencies
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-a', action='store_true', default=False,
+    dest=use_archive_ftp, help='Use archive.asc.rssi.ru ftp-server for
+    FITS-files')
+
+    parser.add_argument('-asc', action='store_const', dest='remote_dir',
+    const='/', help='Download asc-correlator FITS-files')
+
+    parser.add_argument('-difx', action='store_const', dest='remote_dir',
+    const='/quasars_difx/', help='Download difx-correlator FITS-files')
+
+    parser.add_argument('exp_name', type='str', help='Name of the experiment')
+    parser.add_argument('band', type='str', help='Frequency [c,k,l,p]')
+    parser.add_argument('refant', type='str', default='EFLSBERG', help='Ground antenna', nargs='?')
+
+    results = parser.parse_args()
+
+    #if len(sys.argv) not in [3,4]:
+    #    sys.exit("Usage: " + "python " + sys.argv[0] + " exp_name" + " band" + " [ref-station]")
+
+    # paramiko setup
+    names = []
+    host = "archive.asc.rssi.ru"
+    port = 22 
+    username = "quasars"
+    password = ""
+    # if using asc or difx FITS-files - remote_dir contains arg
+    remote_path = remote_dir + "/" + exp_name
+
     login = os.getlogin()
     freq_dict = {"l": "166", "c": "48", "k": "22"}
     logs_dir = '/home/difxmgr/exper/'
@@ -176,7 +205,7 @@ if __name__ == '__main__':
     exp_dir = os.getcwd()
 
 # Inserting our variables in tcsh environment
-    os.environ['SHELL'] = 'tcsh'
+    os.environ['SHELL'] ='tcsh'
     os.environ['exp_name'] = exp_name
     os.environ['band'] = band
     try:
@@ -195,7 +224,11 @@ if __name__ == '__main__':
 
 # Inserting FITS-files with the desired band found in logs to *.cnt-file and
 # commenting out previous entries
-    check_fits_file(exp_name, band, exp_dir, logs_dir)
+    try:
+    	check_fits_file(exp_name, band, exp_dir, logs_dir)
+    except UNoUVFilesException:
+        get_files(names, host, port, username, password, remote_path)
+        
 
 # Finding out number of scans:
     #os.chdir("/data/ilya/pima_scr/")
