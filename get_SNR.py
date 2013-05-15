@@ -2,7 +2,6 @@ from __future__ import print_function
 import os
 import re
 import sys
-import time
 import glob
 import fileinput
 import paramiko
@@ -12,7 +11,7 @@ import argparse
 class NoUVFilesException(Exception):
     pass
 
-    
+
 def replace(file, pattern, subst):
     """Replace `pattern` on `subst` in `file`.
     """
@@ -39,61 +38,66 @@ def find_kth_word_in_line(line, k, words, start=None):
     #TODO: implement negatiation
 
     Inputs:
-    	line [str] - line to search,
-	k [int] - position of word in line,
-	words - iterable of words (strings),
-	start [string] - string that line must start from.
-    Outputs:
-    	None - if no such lines are found in file,
-	[str] - k-th word in line, containing words.
+        line [str] - line to search,
+        k [int] - position of word in line,
+        words - iterable of words (strings),
+        start [string] - string that line must start from.
+        Outputs:
+            None - if no such lines are found in file,
+        [str] - k-th word in line, containing words.
     """
 
     contains = [word in line for word in words]
+
     if False in contains:
-	result = None
+        result = None
+
     elif start:
-	if not line.startswith(start):
-	    result = None
-	else:
+        if not line.startswith(start):
+            result = None
+        if line.startswith(start):
             result = line.split()[k]
+
     else:
         result = line.split()[k]
 
     return result
-	
+
 
 def find_kths_words_in_file(fname, klist, words, start=None):
     """
     Return list of k-th words in each line of file if string
     contains specified words.
     Inputs:
-    	fname [str] - file name,
-	klist [list] - list of positions of words in line
-	words - iterable of words (strings),
-	start [string] - string that line must start from.
+        fname [str] - file name,
+        klist [list] - list of positions of words in line
+        words - iterable of words (strings),
+        start [string] - string that line must start from.
     Outputs:
-    	None - if no such lines are found in file,
-	[list] - list of lists of strings.
+        None - if no such lines are found in file,
+        [list] - list of lists of strings.
     """
 
     results = list()
 
     with open(fname) as file:
         for line in file:
-	    line_results = list()
-	    for k in klist:
-		result = find_kth_word_in_line(line, k, words, start=start) 
-		if result:
-		    line_results.append(result)
-	    if line_results:
-	        results.append(line_results)
+            line_results = list()
+            for k in klist:
+                result = find_kth_word_in_line(line, k, words, start=start)
+                if result:
+                    line_results.append(result)
+            if line_results:
+                results.append(line_results)
 
     return results
 
 
 def get_files(names, host, port, username, password, remote_path):
-    """Get files with name containing ``names`` from remote host to local
-    directory."""
+    """
+    Get files with name containing ``names`` from remote host to local
+    directory.
+    """
 
     transport = paramiko.Transport((host, port))
     transport.connect(username=username, password=password)
@@ -101,13 +105,18 @@ def get_files(names, host, port, username, password, remote_path):
 
     sftp.chdir(remote_path)
     files = sftp.listdir()
+    got_files = list()
+
     for fname in files:
         file_to_get = find_kth_word_in_line(fname, 0, names)
-	if file_to_get:
-	    print("Downloading " + file_to_get + " from " + host + ":" +
-	    remote_path + "/")
+        if file_to_get:
+            print("Downloading " + file_to_get + " from " + host + ":" +
+            remote_path + "/")
             sftp.get(file_to_get, file_to_get)
-	    print("Done Downloading")
+            print("Done Downloading")
+            got_files.append(file_to_get)
+
+    return got_files
 
 
 def check_fits_file(exp_name, band, exp_dir, logs_dir):
@@ -118,7 +127,7 @@ def check_fits_file(exp_name, band, exp_dir, logs_dir):
     """
 
 # Find FITS-files with the desired band from logs
-    logs_directory = logs_dir + exp_name 
+    logs_directory = logs_dir + exp_name
     logs_files = glob.glob(logs_directory + "/*.log")
     fits_files_logs = set()
     for log_file in logs_files:
@@ -139,22 +148,34 @@ def check_fits_file(exp_name, band, exp_dir, logs_dir):
             current_line_is_FITS = True
         if not line.startswith("#UV_FITS:") and current_line_is_FITS:
             current_line_is_FITS = False
+            # if we found fits-files in logs then write them to *.cnt
             if fits_files_logs:
                 for fits_file in fits_files_logs:
                     line = "UV_FITS:            " + fits_file
                     print(line.strip())
 
+            # if we haven't found fits-files in logs then look for them in
+            # archive
             else:
-                raise NoUVFilesException("No FITS-files mentioned in logs of " + str(exp_name))
+                fits_files_from_archive = get_files(names, host, port,
+                        username, password, remote_path)
+                # if we found fits-files in archive then write them to *.cnt
+                if fits_files_from_archive:
+                    for fits_file in fits_files_from_archive:
+                        line = "UV_FITS:            " + fits_file
+                        print(line.strip())
+                # if we haven't found fits-files in archive then raise
+                # exception
+                else:
+                    raise NoUVFilesException("No FITS-files mentioned in logs of " + str(exp_name))
 
 
 if __name__ == '__main__':
 
-
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-a', action='store_true', default=False,
-    dest=use_archive_ftp, help='Use archive.asc.rssi.ru ftp-server for
+    dest='use_archive_ftp', help='Use archive.asc.rssi.ru ftp-server for\
     FITS-files')
 
     parser.add_argument('-asc', action='store_const', dest='remote_dir',
@@ -167,55 +188,52 @@ if __name__ == '__main__':
     parser.add_argument('band', type='str', help='Frequency [c,k,l,p]')
     parser.add_argument('refant', type='str', default='EFLSBERG', help='Ground antenna', nargs='?')
 
-    results = parser.parse_args()
+    args = parser.parse_args()
 
     #if len(sys.argv) not in [3,4]:
     #    sys.exit("Usage: " + "python " + sys.argv[0] + " exp_name" + " band" + " [ref-station]")
 
     # paramiko setup
-    names = []
+    # TODO: add to names
+    names = ['.fits']
     host = "archive.asc.rssi.ru"
-    port = 22 
+    port = 22
     username = "quasars"
     password = ""
     # if using asc or difx FITS-files - remote_dir contains arg
-    remote_path = remote_dir + "/" + exp_name
+    remote_path = args.remote_dir + args.exp_name
 
     login = os.getlogin()
     freq_dict = {"l": "166", "c": "48", "k": "22"}
     logs_dir = '/home/difxmgr/exper/'
     #exp_name = 'raes03jv'
-    exp_name = sys.argv[1]
+    exp_name = args.exp_name
     #band = 'l'
-    band = sys.argv[2]
+    band = args.band
     #refant = 'EFLSBERG'
     try:
-        refant = sys.argv[3]
-    except IndexError:
-	refant = "EFLSBERG"
+        refant = args.refant
+    except AttributeError:
+        refant = "EFLSBERG"
 
 # Creating experiment directory
     os.chdir('/data/' + login + '/VLBI/pima/')
     try:
         os.mkdir(exp_name)
     except OSError:
-    	sys.exit("Directory /data/" + login + "/VLBI/pima/" + str(exp_name) + " already exists!")
+        sys.exit("Directory /data/" + login + "/VLBI/pima/" + str(exp_name) + " already exists!")
 
     os.chdir(exp_name)
     exp_dir = os.getcwd()
 
 # Inserting our variables in tcsh environment
-    os.environ['SHELL'] ='tcsh'
+    os.environ['SHELL'] = 'tcsh'
     os.environ['exp_name'] = exp_name
     os.environ['band'] = band
-    try:
-        os.environ['refant'] = refant
-    except IndexError:
-        os.environ['refant'] = 'EFLSBERG'
+    os.environ['refant'] = refant
 
 # Creating .cnt-file for our experiment
     os.system("tcsh -c 'new_cnt.sh $exp_name $band'")
-
 
 # Replacing default reference antenna and allowing for bandpass
 # calibration.
@@ -224,11 +242,7 @@ if __name__ == '__main__':
 
 # Inserting FITS-files with the desired band found in logs to *.cnt-file and
 # commenting out previous entries
-    try:
-    	check_fits_file(exp_name, band, exp_dir, logs_dir)
-    except UNoUVFilesException:
-        get_files(names, host, port, username, password, remote_path)
-        
+    check_fits_file(exp_name, band, exp_dir, logs_dir)
 
 # Finding out number of scans:
     #os.chdir("/data/ilya/pima_scr/")
@@ -258,21 +272,21 @@ if __name__ == '__main__':
     fname = exp_name + "_" + band + "_fine.log"
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: RR'")
 
-    RR = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
+    RR = find_kths_words_in_file(fname, [-1, -4], ["SNR=", refant, "RADIO-AS"])
 
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: LL'")
-    LL = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
+    LL = find_kths_words_in_file(fname, [-1, -4], ["SNR=", refant, "RADIO-AS"])
 
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: RL'")
-    RL = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
+    RL = find_kths_words_in_file(fname, [-1, -4], ["SNR=", refant, "RADIO-AS"])
 
     os.system("tcsh -c 'pima_fringe.csh $exp_name $band fine POLAR: LR'")
-    LR = find_kths_words_in_file(fname, [-1,-4], ["SNR=", refant, "RADIO-AS"])
+    LR = find_kths_words_in_file(fname, [-1, -4], ["SNR=", refant, "RADIO-AS"])
 
     print("====================================")
     print("Results (RR, LL, RL, LR) :")
     for i in range(len(RR)):
         print("#" + str(i + 1) + ":")
-	print("baseline " + str(RR[i][1]))
-	print(RR[i][0], LL[i][0], RL[i][0], LR[i][0])
-	print("====================================")
+    print("baseline " + str(RR[i][1]))
+    print(RR[i][0], LL[i][0], RL[i][0], LR[i][0])
+    print("====================================")
