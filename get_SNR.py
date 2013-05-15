@@ -119,6 +119,46 @@ def get_files(names, host, port, username, password, remote_path):
     return got_files
 
 
+def find_fnames_in_files(pattern, files):
+    """
+    Find file names with pattern in files. Eg. find FITS-files with the desired
+    band from log-files.
+
+    Input:
+        pattern - [str] - pattern in file name
+	files - [container of str] - files to parse
+    Output:
+        [list of file name]
+    """
+
+    found_files = set()
+    for one_file in files:
+        with open(one_file) as lf:
+            for line in lf.readlines():
+                if "Freq=" + freq_dict[band] in line:
+                    file = one_file.rstrip(".log")
+                    file += ".FITS"
+                    found_files.add(file)
+   
+    return found_files
+
+
+def add_line_after_line_in_file(line_to_add, line_contains, fname, start=''):
+    """
+    Add specified line after some line in specified file. Eg. add record after
+    previously commented record with UV_FITS.
+    """
+
+    add_after_line = False
+    for line in fileinput.input(fname, inplace=1):
+        print(line.strip())
+	if line.contains(line_contains) and line.startswith(start):
+            add_after_line = True
+        if not (line.contains(line_contains) and line.startswith(start)) and add_after_line:
+            add_after_line = False
+            print(line_to_add.strip())
+
+
 def check_fits_file(exp_name, band, exp_dir, logs_dir):
     """
     Builds list of FITS-files on the basis of logs and adds them to *.cnt-file.
@@ -126,49 +166,31 @@ def check_fits_file(exp_name, band, exp_dir, logs_dir):
     NoUVFilesException.
     """
 
-# Find FITS-files with the desired band from logs
+    # Find FITS-files with the desired band from logs
     logs_directory = logs_dir + exp_name
     logs_files = glob.glob(logs_directory + "/*.log")
-    fits_files_logs = set()
-    for log_file in logs_files:
-        with open(log_file) as lf:
-            for line in lf.readlines():
-                if "Freq=" + freq_dict[band] in line:
-                    fits_file = log_file.rstrip(".log")
-                    fits_file += ".FITS"
-                    fits_files_logs.add(fits_file)
 
-# Comment out previous UV_FITS blocks in *.cnt-file
+    fits_files_to_add = find_fnames_in_files("Freq=" + freq_dict[band], logs_files)
+
+    # If we haven't found fits-files in logs then look for them in
+    # archive
+    if not fits_files_to_add:
+        print("No FITS-files are found in local logs.")
+        print("Searching in archive.asc.rssi.ru")
+	fits_files_to_add = get_files(names, host, port,
+		username, password, remote_path)
+    if not fits_files_to_add:
+	    raise NoUVFilesException("No FITS-files found nor in local logs not
+	                           in archive.asc.rssi.ru of " + str(exp_name))
+
+    # Comment out previous UV_FITS blocks in *.cnt-file
     replace(glob.glob(exp_dir + "/*.cnt")[0], "UV_FITS:", "#UV_FITS:")
 
-    current_line_is_FITS = False
-    for line in fileinput.input(glob.glob(exp_dir + "/*.cnt")[0], inplace=1):
-        print(line.strip())
-        if line.startswith("#UV_FITS:"):
-            current_line_is_FITS = True
-        if not line.startswith("#UV_FITS:") and current_line_is_FITS:
-            current_line_is_FITS = False
-            # if we found fits-files in logs then write them to *.cnt
-            if fits_files_logs:
-                for fits_file in fits_files_logs:
-                    line = "UV_FITS:            " + fits_file
-                    print(line.strip())
-
-            # if we haven't found fits-files in logs then look for them in
-            # archive
-            else:
-                fits_files_from_archive = get_files(names, host, port,
-                        username, password, remote_path)
-                # if we found fits-files in archive then write them to *.cnt
-                if fits_files_from_archive:
-                    for fits_file in fits_files_from_archive:
-                        line = "UV_FITS:            " + fits_file
-                        print(line.strip())
-                # if we haven't found fits-files in archive then raise
-                # exception
-                else:
-                    raise NoUVFilesException("No FITS-files mentioned in logs of " + str(exp_name))
-
+    # Add record after previously commented record with UV_FITS
+    for fits_file in fits_files_to_add:
+        line = "UV_FITS:            " + fits_file
+	add_line_after_line_in_file(line, '', fits_file, start='#UV_FITS:')
+   
 
 if __name__ == '__main__':
 
@@ -184,14 +206,16 @@ if __name__ == '__main__':
     parser.add_argument('-difx', action='store_const', dest='remote_dir',
     const='/quasars_difx/', help='Download difx-correlator FITS-files')
 
-    parser.add_argument('exp_name', type='str', help='Name of the experiment')
-    parser.add_argument('band', type='str', help='Frequency [c,k,l,p]')
-    parser.add_argument('refant', type='str', default='EFLSBERG', help='Ground antenna', nargs='?')
+    parser.add_argument('exp_name', type=str, help='Name of the experiment')
+    parser.add_argument('band', type=str, help='Frequency [c,k,l,p]')
+    parser.add_argument('refant', type=str, default='EFLSBERG', help='Ground antenna', nargs='?')
 
     args = parser.parse_args()
 
-    #if len(sys.argv) not in [3,4]:
-    #    sys.exit("Usage: " + "python " + sys.argv[0] + " exp_name" + " band" + " [ref-station]")
+    if not args.remote_dir:
+        sys.exit("Use -asc/-difx flags to select archive's fits-files")
+    	
+
 
     # paramiko setup
     # TODO: add to names
@@ -201,22 +225,20 @@ if __name__ == '__main__':
     username = "quasars"
     password = ""
     # if using asc or difx FITS-files - remote_dir contains arg
-    remote_path = args.remote_dir + args.exp_name
+    if args.remote_dir:
+        remote_path = args.remote_dir + args.exp_name
 
     login = os.getlogin()
     freq_dict = {"l": "166", "c": "48", "k": "22"}
     logs_dir = '/home/difxmgr/exper/'
-    #exp_name = 'raes03jv'
     exp_name = args.exp_name
-    #band = 'l'
     band = args.band
-    #refant = 'EFLSBERG'
     try:
         refant = args.refant
     except AttributeError:
         refant = "EFLSBERG"
 
-# Creating experiment directory
+    # Creating experiment directory
     os.chdir('/data/' + login + '/VLBI/pima/')
     try:
         os.mkdir(exp_name)
@@ -226,22 +248,23 @@ if __name__ == '__main__':
     os.chdir(exp_name)
     exp_dir = os.getcwd()
 
-# Inserting our variables in tcsh environment
+    # Inserting our variables in tcsh environment
     os.environ['SHELL'] = 'tcsh'
     os.environ['exp_name'] = exp_name
     os.environ['band'] = band
     os.environ['refant'] = refant
 
-# Creating .cnt-file for our experiment
+    # Creating .cnt-file for our experiment
     os.system("tcsh -c 'new_cnt.sh $exp_name $band'")
 
-# Replacing default reference antenna and allowing for bandpass
-# calibration.
+    # Replacing default reference antenna and allowing for bandpass
+    # calibration.
     replace(glob.glob(exp_dir + "/*.cnt")[0], 'EFLSBERG', refant)
     replace(glob.glob(exp_dir + "/*.cnt")[0], 'BANDPASS_FILE:      NO # ', 'BANDPASS_FILE:      ')
 
-# Inserting FITS-files with the desired band found in logs to *.cnt-file and
-# commenting out previous entries
+    # Inserting FITS-files with the desired band found in logs to *.cnt-file
+    # and commenting out previous entries. If no FITS-files are found in logs,
+    # then check archive.asc.rssi.ru (first asc, then difx results)
     check_fits_file(exp_name, band, exp_dir, logs_dir)
 
 # Finding out number of scans:
