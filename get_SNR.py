@@ -159,7 +159,7 @@ def add_line_after_line_in_file(line_to_add, line_contains, fname, start=''):
             print(line_to_add.strip())
 
 
-def check_fits_file(exp_name, band, exp_dir, logs_dir):
+def check_fits_file(exp_name, band, exp_dir, logs_dir=None):
     """
     Builds list of FITS-files on the basis of logs and adds them to *.cnt-file.
     If no files with specified band are found in logs_dir => throws
@@ -169,22 +169,26 @@ def check_fits_file(exp_name, band, exp_dir, logs_dir):
     print('In check_fits_file with:')
     print('expname: ' + str(exp_name))
     print('band: ' + str(band))
-    print('exp_dir: ' + str(exp_dir))
-    print('logs_dir: ' +str(logs_dir))
-    # Find FITS-files with the desired band from logs
-    logs_directory = logs_dir + exp_name
-    logs_files = glob.glob(logs_directory + "/*.log")
+    if logs_dir:
+        print('exp_dir: ' + str(exp_dir))
+        print('logs_dir: ' +str(logs_dir))
+        # Find FITS-files with the desired band from logs
+        logs_directory = logs_dir + exp_name
+        logs_files = glob.glob(logs_directory + "/*.log")
 
-    files_to_add = find_fnames_in_files("Freq=" + freq_dict[band], logs_files)
-    files_to_add = [file_.rstrip(".log") for file_ in files_to_add]
-    files_to_add = [file_ + ".FITS" for file_ in files_to_add]
+        files_to_add = find_fnames_in_files("Freq=" + freq_dict[band], logs_files)
+        files_to_add = [file_.rstrip(".log") for file_ in files_to_add]
+        files_to_add = [file_ + ".FITS" for file_ in files_to_add]
+
+    else:
+        files_to_add = None
 
     # If we haven't found fits-files in logs then look for them in
     # archive
     if not files_to_add:
         print("No FITS-files are found in local logs.")
         print("Searching in archive.asc.rssi.ru")
-	files_to_add = get_files('fits', host, port,
+	files_to_add = get_files(['_' + str(band).upper() + '_', 'fits'], host, port,
 		username, password, remote_path)
     if not files_to_add:
 	    raise NoUVFilesException("No FITS-files found nor in local logs not in archive.asc.rssi.ru of " + str(exp_name))
@@ -276,9 +280,12 @@ if __name__ == '__main__':
     replace(glob.glob(exp_dir + "/*.cnt")[0], 'BANDPASS_FILE:      NO # ', 'BANDPASS_FILE:      ')
 
     # Inserting FITS-files with the desired band found in logs to *.cnt-file
-    # and commenting out previous entries. If no FITS-files are found in logs,
-    # then check archive.asc.rssi.ru (first asc, then difx results)
-    check_fits_file(exp_name, band, exp_dir, logs_dir)
+    # and commenting out previous entries. 
+    if args.remote_dir:
+        check_fits_file(exp_name, band, exp_dir, logs_dir=None)
+    else:
+        check_fits_file(exp_name, band, exp_dir, logs_dir)
+
 
 # Finding out number of scans:
     #os.chdir("/data/ilya/pima_scr/")
